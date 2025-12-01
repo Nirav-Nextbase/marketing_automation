@@ -1,0 +1,17 @@
+# robots.txt - SEO Best Practices
+# Allow all search engines to crawl the site
+
+User-agent: *
+Allow: /
+
+# Disallow admin and API routes
+Disallow: /api/
+Disallow: /_next/
+Disallow: /admin/
+
+# Sitemap location
+Sitemap: https://marketingimagestudio.com/sitemap.xml
+
+# Crawl-delay for respectful crawling
+Crawl-delay: 1
+
