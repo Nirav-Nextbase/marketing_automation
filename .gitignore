@@ -92,3 +92,4 @@ out/
 !**/env.template
 !**/env.local.template
 
+./python_backend/

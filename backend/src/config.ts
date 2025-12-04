@@ -88,7 +88,7 @@ export const config = {
       console.log('[config]   Preview:', finalValue.substring(0, 150) + (finalValue.length > 150 ? '...' : ''));
       
       return finalValue;
-    })(),
+    })(), 
     systemPromptPromptEditor:
       process.env.SYSTEM_PROMPT_PROMPT_EDITOR ??
       DEFAULT_SYSTEM_PROMPT_PROMPT_EDITOR,

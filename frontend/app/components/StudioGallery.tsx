@@ -36,7 +36,7 @@ const getMaxItemsPerRow = (width: number): number => {
  * Implements perfect justified layout similar to Midjourney, Pinterest, Unsplash
  * 
  * Features:
- * - Fixed 300px row height with flex-based width calculation
+ * - Width-based percentage calculation (width% = ratio / totalRatio × 100)
  * - No image cropping (uses natural aspect ratios)
  * - Smart spacer system for incomplete rows
  * - Performance optimized with throttling and lazy loading
@@ -67,11 +67,11 @@ export const StudioGallery = ({
   const imageAspectRatios = useRef<Map<string, number>>(new Map());
   const [layoutVersion, setLayoutVersion] = useState(0);
   
-  // Row heights: Map<rowIndex, calculatedHeight>
-  const rowHeights = useRef<Map<number, number>>(new Map());
-  const [rowHeightsVersion, setRowHeightsVersion] = useState(0);
+  // Row widths: Map<rowIndex, Map<itemIndex, widthPercent>>
+  const rowWidths = useRef<Map<number, Map<number, number>>>(new Map());
+  const [rowWidthsVersion, setRowWidthsVersion] = useState(0);
   
-  // Row width refs for dynamic height calculation
+  // Row width refs for dynamic width calculation
   const rowRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   
   // Sentinel ref for detecting last row visibility
@@ -241,66 +241,46 @@ export const StudioGallery = ({
   }, [displayItems, maxItemsPerRow]);
 
   /**
-   * Calculate optimal row height to eliminate whitespace
-   * Formula: height = (rowWidth - gaps) / sumOfAspectRatios
-   * WHY: Ensures images fill containers without padding/whitespace
-   * 
-   * Works for both complete and incomplete rows (last row).
-   * For incomplete rows, accounts for spacer and calculates height
-   * based on actual items' aspect ratios to eliminate whitespace.
+   * Calculate width percentages for each item in a row (width-based method)
+   * Formula: width% = (ratio / totalRatio) × 100
+   * WHY: Width-based approach sets explicit widths, height follows naturally
    */
-  const calculateOptimalRowHeight = useCallback((rowItems: HistoryItem[], rowWidth: number, isIncompleteRow: boolean = false, currentMaxItems: number = maxItemsPerRow): number => {
-    if (rowItems.length === 0) return BASE_ROW_HEIGHT_PX;
+  const calculateItemWidths = useCallback((
+    rowItems: HistoryItem[],
+    rowWidth: number,
+    isIncompleteRow: boolean = false
+  ): Map<number, number> => {
+    const widthMap = new Map<number, number>();
     
-    // Calculate sum of aspect ratios for actual image items only
+    if (rowItems.length === 0) return widthMap;
+    
+    // Calculate sum of aspect ratios
     const totalAspectRatio = rowItems.reduce((sum, item) => {
       return sum + Math.max(getAspectRatio(item), 0.1);
     }, 0);
     
-    if (totalAspectRatio === 0) return BASE_ROW_HEIGHT_PX;
+    if (totalAspectRatio === 0) return widthMap;
     
-    // Calculate gaps (n-1 gaps between n items, plus gap before spacer if incomplete)
+    // Calculate gaps (n-1 gaps between n items)
     const itemGaps = (rowItems.length - 1) * ROW_GAP_PX;
-    const spacerGap = isIncompleteRow ? ROW_GAP_PX : 0; // Gap before spacer
-    const totalGaps = itemGaps + spacerGap;
-    const availableWidth = rowWidth - totalGaps;
+    const availableWidth = rowWidth - itemGaps;
     
-    // For incomplete rows (last row), account for spacer in flex calculation
-    if (isIncompleteRow && rowItems.length > 0) {
-      const itemsInRow = rowItems.length;
-      const spacerFlex = (currentMaxItems - itemsInRow) * SPACER_FLEX_MULTIPLIER;
-      
-      // Total flex = sum of item aspect ratios + spacer flex
-      const totalFlex = totalAspectRatio + spacerFlex;
-      
-      // Calculate how much width each flex unit gets
-      const widthPerFlexUnit = availableWidth / totalFlex;
-      
-      // Each item's width = its aspect ratio * widthPerFlexUnit
-      // For each item: height = width / aspectRatio = (aspectRatio * widthPerFlexUnit) / aspectRatio = widthPerFlexUnit
-      // So height is the same for all items = widthPerFlexUnit
-      const optimalHeight = widthPerFlexUnit;
-      
-      // Clamp to min/max bounds
-      return Math.max(MIN_ROW_HEIGHT_PX, Math.min(MAX_ROW_HEIGHT_PX, optimalHeight));
-    }
+    // Calculate width percentage for each item
+    rowItems.forEach((item, index) => {
+      const aspectRatio = Math.max(getAspectRatio(item), 0.1);
+      const widthPercent = (aspectRatio / totalAspectRatio) * 100;
+      widthMap.set(index, widthPercent);
+    });
     
-    // For complete rows, use standard calculation
-    // Calculate optimal height: availableWidth / totalAspectRatio
-    // This ensures each item's width matches its aspect ratio perfectly
-    const optimalHeight = availableWidth / totalAspectRatio;
-    
-    // Clamp to min/max bounds
-    return Math.max(MIN_ROW_HEIGHT_PX, Math.min(MAX_ROW_HEIGHT_PX, optimalHeight));
-  }, [getAspectRatio, maxItemsPerRow]);
+    return widthMap;
+  }, [getAspectRatio]);
 
   /**
-   * Recalculate row heights when layout changes
-   * WHY: Dynamic height adjustment eliminates whitespace
-   * Special handling for incomplete rows (last row) to ensure proper height calculation
+   * Recalculate item widths when layout changes
+   * WHY: Width-based layout adapts to container size
    */
   useEffect(() => {
-    const recalculateHeights = () => {
+    const recalculateWidths = () => {
       let hasChanges = false;
       
       chunkedHistory.forEach((rowItems, rowIndex) => {
@@ -314,44 +294,46 @@ export const StudioGallery = ({
         const isIncompleteRow = rowItems.length < maxItemsPerRow;
         const isLastRow = rowIndex === chunkedHistory.length - 1;
         
-        // Calculate optimal height - same logic for all rows, but with special handling for incomplete rows
-        const optimalHeight = calculateOptimalRowHeight(
-          rowItems, 
-          rowWidth, 
-          isIncompleteRow && isLastRow, // Only mark as incomplete if it's the actual last row
-          maxItemsPerRow // Pass current max items per row
+        // Calculate width percentages for items in this row
+        const itemWidths = calculateItemWidths(
+          rowItems,
+          rowWidth,
+          isIncompleteRow && isLastRow
         );
         
-        const currentHeight = rowHeights.current.get(rowIndex);
+        const currentWidths = rowWidths.current.get(rowIndex);
         
-        // Only update if height changed significantly (>2px difference for smoother updates)
-        if (!currentHeight || Math.abs(currentHeight - optimalHeight) > 2) {
-          rowHeights.current.set(rowIndex, optimalHeight);
+        // Check if widths changed (compare first item as indicator)
+        const firstWidth = itemWidths.get(0);
+        const currentFirstWidth = currentWidths?.get(0);
+        
+        if (!currentFirstWidth || Math.abs(currentFirstWidth - (firstWidth || 0)) > 0.1) {
+          rowWidths.current.set(rowIndex, itemWidths);
           hasChanges = true;
         }
       });
       
       if (hasChanges) {
-        setRowHeightsVersion((v) => v + 1);
+        setRowWidthsVersion((v) => v + 1);
       }
     };
 
     // Initial calculation
-    recalculateHeights();
+    recalculateWidths();
 
     // Recalculate on window resize
     const handleResize = () => {
       if (layoutUpdateTimeout.current) {
         clearTimeout(layoutUpdateTimeout.current);
       }
-      layoutUpdateTimeout.current = setTimeout(recalculateHeights, 100);
+      layoutUpdateTimeout.current = setTimeout(recalculateWidths, 100);
     };
 
     window.addEventListener('resize', handleResize);
     return () => {
       window.removeEventListener('resize', handleResize);
     };
-  }, [chunkedHistory, calculateOptimalRowHeight, layoutVersion, maxItemsPerRow]);
+  }, [chunkedHistory, calculateItemWidths, layoutVersion, maxItemsPerRow]);
 
   /**
    * Handle image download via proxy
@@ -476,9 +458,6 @@ export const StudioGallery = ({
             const isLastRow = rowIndex === chunkedHistory.length - 1;
             const isIncompleteRow = itemsInRow < maxItemsPerRow;
             
-            // Get calculated height or use base height
-            const rowHeight = rowHeights.current.get(rowIndex) || BASE_ROW_HEIGHT_PX;
-            
             return (
               <div
                 key={`row-${rowIndex}`}
@@ -494,9 +473,7 @@ export const StudioGallery = ({
                   display: 'flex',
                   gap: ROW_GAP_PX,
                   width: '100%',
-                  height: rowHeight, // Dynamic height to eliminate whitespace
-                  minHeight: MIN_ROW_HEIGHT_PX,
-                  maxHeight: MAX_ROW_HEIGHT_PX,
+                  height: 'auto', // Height follows content
                   animation: `fadeInUp 0.4s ease ${rowIndex * 0.1}s both`,
                   transition: 'height 0.3s ease', // Smooth height transitions
                 }}
@@ -504,14 +481,16 @@ export const StudioGallery = ({
                 {rowItems.map((item, itemIndex) => {
                   const isGenerating = item.id === 'generating';
                   const aspectRatio = Math.max(getAspectRatio(item), 0.1); // Prevent division by zero
+                  const widthPercent = rowWidths.current.get(rowIndex)?.get(itemIndex) || 0;
                   
                   return (
                     <div
                       key={item.id}
                       className="gallery-item"
                       style={{
-                        flex: aspectRatio, // Width determined by aspect ratio
-                        minWidth: 0, // Allow flex item to shrink
+                        width: widthPercent > 0 ? `calc(${widthPercent}% - ${ROW_GAP_PX}px)` : 'auto',
+                        minWidth: 0,
+                        height: 'auto', // Height follows image aspect ratio
                         position: 'relative',
                         borderRadius: 16,
                         overflow: 'hidden',
@@ -551,12 +530,12 @@ export const StudioGallery = ({
                         onSelectItem(item);
                       }}
                     >
-                      {/* Image Container - Dynamic height matches row, flexible width */}
+                      {/* Image Container - Height matches image natural height (like justifiedgrid.html) */}
                       <div
                         style={{
                           position: 'relative',
                           width: '100%',
-                          height: '100%', // Match parent row height
+                          height: 'auto', // ✅ Let image determine container height (like justifiedgrid.html)
                           background: 'linear-gradient(135deg, #f8f9ff 0%, #f0f4ff 50%, #e8f0ff 100%)',
                           overflow: 'hidden',
                           borderRadius: 16,
@@ -639,20 +618,17 @@ export const StudioGallery = ({
                               />
                             )}
                             
-                            {/* Actual Image - Fill container perfectly to eliminate whitespace */}
+                            {/* Actual Image - Fill container perfectly (like justifiedgrid.html) */}
                             <img
                               src={item.outputImage}
                               alt={item.userPrompt ? `AI-generated marketing image: ${item.userPrompt.substring(0, 100)}` : 'AI-generated marketing image'}
                               title={item.userPrompt || 'Generated marketing image'}
                               style={{
-                                position: 'absolute',
-                                top: 0,
-                                left: 0,
+                                // ✅ Like justifiedgrid.html: normal flow, image determines container height
                                 width: '100%',
-                                height: '100%',
-                                // Since container aspect ratio matches image aspect ratio (via calculation),
-                                // cover will fill without cropping, eliminating all whitespace
-                                objectFit: 'cover',
+                                height: '100%', // Fill container height (container height = image natural height)
+                                objectFit: 'cover', // Fill the tile, ensure no gaps inside tile
+                                display: 'block', // Remove inline spacing (from justifiedgrid.html)
                                 transition: 'opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
                                 opacity: loadedImages.has(item.id) ? 1 : 0,
                                 zIndex: 2,
@@ -785,11 +761,11 @@ export const StudioGallery = ({
                   );
                 })}
                 
-                {/* Spacer for incomplete rows - prevents stretching */}
+                {/* Spacer for incomplete rows - approximate width for remaining space */}
                 {isIncompleteRow && (
                   <div
                     style={{
-                      flex: (maxItemsPerRow - itemsInRow) * SPACER_FLEX_MULTIPLIER,
+                      width: `calc(${((maxItemsPerRow - itemsInRow) / maxItemsPerRow) * 100}% - ${ROW_GAP_PX}px)`,
                       minWidth: 0,
                       pointerEvents: 'none', // Invisible spacer
                     }}

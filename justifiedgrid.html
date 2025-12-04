@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Justified Grid Test (JS Calculated - Diverse)</title>
+    <style>
+        body {
+            background-color: #111;
+            color: #fff;
+            font-family: sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .gallery {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0;
+            padding: 20px;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        .tile {
+            position: relative;
+            overflow: hidden;
+            margin: 4px;
+            /* 8px gap total */
+            background: transparent;
+            box-sizing: border-box;
+        }
+
+        .tile-img {
+            width: 100%;
+            height: 100%;
+            /* Fill the tile */
+            object-fit: cover;
+            /* Ensure no gaps inside tile if aspect ratio is slightly off */
+            display: block;
+        }
+
+        /* Overlay styles */
+        .overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            opacity: 0;
+            transition: opacity 0.2s;
+            display: flex;
+            align-items: flex-end;
+            padding: 10px;
+            pointer-events: none;
+        }
+
+        .tile:hover .overlay {
+            opacity: 1;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Justified Grid Test (JS Calculated - Diverse Images)</h1>
+    <div class="gallery" id="gallery">
+        <!-- Row 1 -->
+        <article class="tile">
+            <img src="https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&q=80" class="tile-img"
+                alt="landscape">
+            <div class="overlay">Overlay</div>
+        </article>
+        <article class="tile">
+            <img src="https://images.unsplash.com/photo-1542206395-9feb3edaa68d?w=800&q=80" class="tile-img"
+                alt="portrait">
+            <div class="overlay">Overlay</div>
+        </article>
+        <article class="tile">
+            <img src="https://images.unsplash.com/photo-1517849845537-4d257902454a?w=800&q=80" class="tile-img"
+                alt="square">
+            <div class="overlay">Overlay</div>
+        </article>
+        <article class="tile">
+            <img src="https://images.unsplash.com/photo-1472214103451-9374bd1c798e?w=800&q=80" class="tile-img"
+                alt="wide">
+            <div class="overlay">Overlay</div>
+        </article>
+
+        <!-- Row 2 -->
+        <article class="tile">
+            <img src="https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=800&q=80" class="tile-img"
+                alt="landscape 2">
+            <div class="overlay">Overlay</div>
+        </article>
+        <article class="tile">
+            <img src="https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=800&q=80" class="tile-img"
+                alt="forest">
+            <div class="overlay">Overlay</div>
+        </article>
+        <article class="tile">
+            <img src="https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?w=800&q=80" class="tile-img"
+                alt="forest 2">
+            <div class="overlay">Overlay</div>
+        </article>
+        <article class="tile">
+            <img src="https://images.unsplash.com/photo-1472214103451-9374bd1c798e?w=800&q=80" class="tile-img"
+                alt="wide 2">
+            <div class="overlay">Overlay</div>
+        </article>
+
+        <!-- Row 3 -->
+        <article class="tile">
+            <img src="https://images.unsplash.com/photo-1554080353-a576cf803bda?w=800&q=80" class="tile-img"
+                alt="portrait 2">
+            <div class="overlay">Overlay</div>
+        </article>
+        <article class="tile">
+            <img src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=800&q=80" class="tile-img"
+                alt="portrait 3">
+            <div class="overlay">Overlay</div>
+        </article>
+        <article class="tile">
+            <img src="https://images.unsplash.com/photo-1504198458649-3128b932f49e?w=800&q=80" class="tile-img"
+                alt="square 2">
+            <div class="overlay">Overlay</div>
+        </article>
+        <article class="tile">
+            <img src="https://images.unsplash.com/photo-1493246507139-91e8fad9978e?w=800&q=80" class="tile-img"
+                alt="landscape 3">
+            <div class="overlay">Overlay</div>
+        </article>
+    </div>
+
+    <script>
+        function layoutGrid() {
+            const gallery = document.getElementById('gallery');
+            const tiles = Array.from(gallery.querySelectorAll('.tile'));
+            const itemsPerRow = 4;
+            const gap = 8; // Total gap per item (4px * 2)
+
+            // Process in chunks of 4
+            for (let i = 0; i < tiles.length; i += itemsPerRow) {
+                const rowTiles = tiles.slice(i, i + itemsPerRow);
+                if (rowTiles.length === 0) continue;
+
+                // Calculate aspect ratios
+                const ratios = rowTiles.map(tile => {
+                    const img = tile.querySelector('img');
+                    // Use natural dimensions if loaded, otherwise assume 1.5 (3:2)
+                    return (img.naturalWidth || 800) / (img.naturalHeight || 600);
+                });
+
+                // Sum of aspect ratios
+                const totalRatio = ratios.reduce((sum, r) => sum + r, 0);
+
+                // Calculate width percentages
+                // Formula: width% = (ratio / totalRatio) * 100
+                // We also need to account for gaps. 
+
+                rowTiles.forEach((tile, index) => {
+                    const ratio = ratios[index];
+                    const widthPercent = (ratio / totalRatio) * 100;
+
+                    // Set width
+                    tile.style.width = `calc(${widthPercent}% - ${gap}px)`;
+
+                    // Set height based on width and ratio to ensure alignment
+                    // But since we want them to be the SAME height in the row, we let the width drive it.
+                    // Actually, if we set width based on ratio, they SHOULD naturally be the same height.
+                    // Height = Width / Ratio = (ContainerWidth * Ratio / TotalRatio) / Ratio = ContainerWidth / TotalRatio
+                    // So they will all have height = ContainerWidth / TotalRatio.
+
+                    tile.style.height = 'auto';
+
+                    // Ensure image fills it
+                    const img = tile.querySelector('img');
+                    img.style.height = '100%';
+                    img.style.width = '100%';
+                });
+            }
+        }
+
+        // Run layout when images load
+        window.addEventListener('load', layoutGrid);
+        window.addEventListener('resize', layoutGrid);
+
+        // Also run immediately in case
+        layoutGrid();
+
+        // And periodically check for load
+        setInterval(layoutGrid, 1000);
+    </script>
+</body>
+
+</html>
